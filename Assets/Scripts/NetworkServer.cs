@@ -4,16 +4,23 @@ using Unity.Collections;
 using Unity.Networking.Transport;
 using NetworkMessages;
 using System;
+using System.Collections;
 using System.Text;
+using System.Collections.Generic;
+using System.Linq;
 
 public class NetworkServer : MonoBehaviour
 {
     public NetworkDriver m_Driver;
     public ushort serverPort;
     private NativeList<NetworkConnection> m_Connections;
+    [SerializeField]
+    private Dictionary<string, NetworkObjects.NetworkPlayer> PlayersConnected;
 
     void Start ()
     {
+        PlayersConnected = new Dictionary<string, NetworkObjects.NetworkPlayer>();
+
         m_Driver = NetworkDriver.Create();
         var endpoint = NetworkEndPoint.AnyIpv4;
         endpoint.Port = serverPort;
@@ -23,6 +30,25 @@ public class NetworkServer : MonoBehaviour
             m_Driver.Listen();
 
         m_Connections = new NativeList<NetworkConnection>(16, Allocator.Persistent);
+        StartCoroutine(SendUpdateToAllClients());
+    }
+
+    IEnumerator SendUpdateToAllClients()
+    {
+        while (true)
+        {
+            for(int i = 0; i < m_Connections.Length; i++)
+            {
+                if (!m_Connections[i].IsCreated)
+                    continue;
+
+                ////example to send a handshake
+                HandshakeMsg m = new HandshakeMsg();
+                m.player.id = m_Connections[i].InternalId.ToString();
+                SendToClient(JsonUtility.ToJson(m), m_Connections[i]);
+            }
+            yield return new WaitForSeconds(2);
+        }
     }
 
     void SendToClient(string message, NetworkConnection c){
@@ -38,14 +64,48 @@ public class NetworkServer : MonoBehaviour
     }
 
     void OnConnect(NetworkConnection c){
+        //Things we gotta do:
+        // - Connect the new player - done for us already.
+        // A Send the player its id
+        // B Send the player a list of existing clients
+        // C Send all the clients the new player
+        // D Add the new player to the servers list of client connections
+        // D part 2 Also Add the player to the dictionary we keep. of player objects
+        // - /wrist.
         m_Connections.Add(c);
         Debug.Log("Accepted a connection");
+        //A
+        PlayerUpdateMsg SendIDMsg = new PlayerUpdateMsg();
+        SendIDMsg.cmd = Commands.SET_NEW_PLAYER_ID;
+        SendIDMsg.player.id = c.InternalId.ToString();
+        SendToClient(JsonUtility.ToJson(SendIDMsg), c);
+        //B
+        ServerUpdateMsg ExistingPlayers = new ServerUpdateMsg();
+        ExistingPlayers.cmd = Commands.SET_NEW_PLAYER_LIST;
+        for(int i = 0; i < PlayersConnected.Count; i++)
+        {   //Fuck my life. 
+            ExistingPlayers.players.Add(PlayersConnected.Values.ElementAt(i));
+        }
+        SendToClient(JsonUtility.ToJson(ExistingPlayers), c);
+        //C
+        PlayerUpdateMsg AddNewPlayerMsg = new PlayerUpdateMsg();
+        AddNewPlayerMsg.cmd = Commands.ADD_NEW_PLAYER;
+        //Make sure to give the ID because why the fuck is this so hard. 
+        AddNewPlayerMsg.player.id = SendIDMsg.player.id;
+        //Now the loop lord have mercy
+        for(int i = 0; i < m_Connections.Length; i++)
+        {
+            SendToClient(JsonUtility.ToJson(AddNewPlayerMsg), m_Connections[i]);
+        }
 
-        //// Example to send a handshake message:
-        // HandshakeMsg m = new HandshakeMsg();
-        // m.player.id = c.InternalId.ToString();
-        // SendToClient(JsonUtility.ToJson(m),c);        
+        //Finally D
+        m_Connections.Add(c);
+        //D Part 2 We are adding a new network player to the key with this objects id
+        PlayersConnected[c.InternalId.ToString()] = new NetworkObjects.NetworkPlayer();
     }
+
+
+
 
     void OnData(DataStreamReader stream, int i){
         NativeArray<byte> bytes = new NativeArray<byte>(stream.Length,Allocator.Temp);
@@ -72,9 +132,29 @@ public class NetworkServer : MonoBehaviour
         }
     }
 
+    //Can skip previous assignment Heartbeat disconnect as we automatically 
+    //lose connection here.
+    //Remove client from appropriate lists and notify clients of dropped player.
     void OnDisconnect(int i){
         Debug.Log("Client disconnected from server");
+        
+        for(int j = 0; j < PlayersConnected.Count; j++)
+        {
+            if(PlayersConnected.ElementAt(j).Value.id == m_Connections[j].InternalId.ToString())
+            {
+                PlayerUpdateMsg DisconnectedPlayer = new PlayerUpdateMsg();
+                DisconnectedPlayer.cmd = Commands.REMOVE_PLAYER;
+                DisconnectedPlayer.player.id = PlayersConnected.ElementAt(j).Value.id;
+                PlayersConnected.Remove(j.ToString());
+                for (int k = 0; k < m_Connections.Length; k++)
+                {
+                    SendToClient(JsonUtility.ToJson(DisconnectedPlayer), m_Connections[j]);
+                }
+            }
+        }
+
         m_Connections[i] = default(NetworkConnection);
+        
     }
 
     void Update ()

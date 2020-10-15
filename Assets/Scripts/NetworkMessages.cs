@@ -8,7 +8,11 @@ namespace NetworkMessages
         PLAYER_UPDATE,
         SERVER_UPDATE,
         HANDSHAKE,
-        PLAYER_INPUT
+        PLAYER_INPUT,
+        SET_NEW_PLAYER_ID,
+        SET_NEW_PLAYER_LIST,
+        ADD_NEW_PLAYER,
+        REMOVE_PLAYER
     }
 
     [System.Serializable]

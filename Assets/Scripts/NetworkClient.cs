@@ -5,6 +5,9 @@ using NetworkMessages;
 using NetworkObjects;
 using System;
 using System.Text;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 
 public class NetworkClient : MonoBehaviour
 {
@@ -12,7 +15,9 @@ public class NetworkClient : MonoBehaviour
     public NetworkConnection m_Connection;
     public string serverIP;
     public ushort serverPort;
+    public string myID;
 
+    public Dictionary<string, NetworkObject> ConnectedClients;
     
     void Start ()
     {
@@ -29,13 +34,21 @@ public class NetworkClient : MonoBehaviour
         m_Driver.EndSend(writer);
     }
 
+    IEnumerator StartUpdateCoroutine()
+    {
+        while (true)
+        {
+            yield return new WaitForSeconds(2);
+            Debug.Log("Sending Client Update to server");
+            HandshakeMsg m = new HandshakeMsg();
+            m.player.id = m_Connection.InternalId.ToString();
+            SendToServer(JsonUtility.ToJson(m));
+        }
+    }
+
     void OnConnect(){
         Debug.Log("We are now connected to the server");
-
-        //// Example to send a handshake message:
-        // HandshakeMsg m = new HandshakeMsg();
-        // m.player.id = m_Connection.InternalId.ToString();
-        // SendToServer(JsonUtility.ToJson(m));
+        StartCoroutine(StartUpdateCoroutine());
     }
 
     void OnData(DataStreamReader stream){
@@ -46,19 +59,38 @@ public class NetworkClient : MonoBehaviour
 
         switch(header.cmd){
             case Commands.HANDSHAKE:
-            HandshakeMsg hsMsg = JsonUtility.FromJson<HandshakeMsg>(recMsg);
-            Debug.Log("Handshake message received!");
-            break;
+                HandshakeMsg hsMsg = JsonUtility.FromJson<HandshakeMsg>(recMsg);
+                Debug.Log("Handshake message received!");
+                break;
+            case Commands.SET_NEW_PLAYER_ID:
+                PlayerUpdateMsg incIdMsg = JsonUtility.FromJson<PlayerUpdateMsg>(recMsg);
+                Debug.Log("RECEIVED MY ID");
+                myID = incIdMsg.player.id;
+                break;
             case Commands.PLAYER_UPDATE:
-            PlayerUpdateMsg puMsg = JsonUtility.FromJson<PlayerUpdateMsg>(recMsg);
-            Debug.Log("Player update message received!");
-            break;
+                PlayerUpdateMsg puMsg = JsonUtility.FromJson<PlayerUpdateMsg>(recMsg);
+                Debug.Log("Player update message received!");
+                break;
             case Commands.SERVER_UPDATE:
-            ServerUpdateMsg suMsg = JsonUtility.FromJson<ServerUpdateMsg>(recMsg);
-            Debug.Log("Server update message received!");
-            break;
+                ServerUpdateMsg suMsg = JsonUtility.FromJson<ServerUpdateMsg>(recMsg);
+                Debug.Log("Server update message received!");
+                break;
+            case Commands.ADD_NEW_PLAYER:
+                Debug.Log("NEW PLAYER CONNECTED");
+                break;
+            case Commands.SET_NEW_PLAYER_LIST:
+                ServerUpdateMsg newListMsg = JsonUtility.FromJson<ServerUpdateMsg>(recMsg);
+                for(int i = 0; i < newListMsg.players.Count; i++)
+                {
+                    ConnectedClients.Add(newListMsg.players.ElementAt(i).id, newListMsg.players.ElementAt(i));
+                }
+                Debug.Log("NEW PLAYER LIST RECEIVED");
+                break;
+            case Commands.REMOVE_PLAYER:
+                Debug.Log("PLAYER REMOVED FROM GAME");
+                break;
             default:
-            Debug.Log("Unrecognized message received!");
+                Debug.Log("Unrecognized message received!");
             break;
         }
     }
