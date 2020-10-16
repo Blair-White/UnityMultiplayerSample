@@ -30,28 +30,21 @@ public class NetworkServer : MonoBehaviour
             m_Driver.Listen();
 
         m_Connections = new NativeList<NetworkConnection>(16, Allocator.Persistent);
-        StartCoroutine(SendUpdateToAllClients());
+        InvokeRepeating("SendClientUpdatesAll", 0.05f, 0.2f);
+        
     }
 
-    IEnumerator SendUpdateToAllClients()
+    void SendClientUpdatesAll()
     {
-        while (true)
+        for (int i = 0; i < PlayersConnected.Count; i++)
         {
-            for(int i = 0; i < m_Connections.Length; i++)
-            {
-                if (!m_Connections[i].IsCreated)
-                    continue;
-
-                ////example to send a handshake
-                HandshakeMsg m = new HandshakeMsg();
-                m.player.id = m_Connections[i].InternalId.ToString();
-                Assert.IsTrue(m_Connections[i].IsCreated);
-                SendToClient(JsonUtility.ToJson(m), m_Connections[i]);
-            }
-            yield return new WaitForSeconds(2);
+            //example to send a handshake
+            HandshakeMsg m = new HandshakeMsg();
+            m.player.id = m_Connections[i].InternalId.ToString();
+            Assert.IsTrue(m_Connections[i].IsCreated);
+            SendToClient(JsonUtility.ToJson(m), m_Connections[i]);
         }
     }
-
     void SendToClient(string message, NetworkConnection c){
         var writer = m_Driver.BeginSend(NetworkPipeline.Null, c);
         NativeArray<byte> bytes = new NativeArray<byte>(Encoding.ASCII.GetBytes(message),Allocator.Temp);
