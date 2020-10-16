@@ -4,72 +4,91 @@ using UnityEngine;
 
 namespace NetworkMessages
 {
-    public enum Commands{
+    public enum Commands
+    {
         PLAYER_UPDATE,
         SERVER_UPDATE,
         HANDSHAKE,
-        PLAYER_INPUT,
-        SET_NEW_PLAYER_ID,
-        SET_NEW_PLAYER_LIST,
-        ADD_NEW_PLAYER,
-        REMOVE_PLAYER
+        GETEXISITNGPLAYERS,
+        ADDPLAYER,
+        GETMYID,
+        PLAYERDROPPED
     }
 
     [System.Serializable]
-    public class NetworkHeader{
+    public class NetworkHeader
+    {
         public Commands cmd;
     }
 
     [System.Serializable]
-    public class HandshakeMsg:NetworkHeader{
+    public class HandshakeMsg : NetworkHeader
+    {
         public NetworkObjects.NetworkPlayer player;
-        public HandshakeMsg(){      // Constructor
+
+        public HandshakeMsg()
+        {    
             cmd = Commands.HANDSHAKE;
             player = new NetworkObjects.NetworkPlayer();
         }
     }
-    
+
+
+
     [System.Serializable]
-    public class PlayerUpdateMsg:NetworkHeader{
+    public class PlayerUpdateMsg : NetworkHeader
+    {
         public NetworkObjects.NetworkPlayer player;
-        public PlayerUpdateMsg(){      // Constructor
+        public PlayerUpdateMsg()
+        {     
             cmd = Commands.PLAYER_UPDATE;
             player = new NetworkObjects.NetworkPlayer();
-            player.HeartBeat = Time.time;
         }
     };
 
-    public class PlayerInputMsg:NetworkHeader{
-        public Input myInput;
-        public PlayerInputMsg(){
-            cmd = Commands.PLAYER_INPUT;
-            myInput = new Input();
-        }
-    }
     [System.Serializable]
-    public class  ServerUpdateMsg:NetworkHeader{
+    public class ServerUpdateMsg : NetworkHeader
+    {
         public List<NetworkObjects.NetworkPlayer> players;
-        public ServerUpdateMsg(){      // Constructor
+        public ServerUpdateMsg()
+        {      
             cmd = Commands.SERVER_UPDATE;
             players = new List<NetworkObjects.NetworkPlayer>();
         }
     }
-} 
+
+    [System.Serializable]
+    public class DisconnectedPlayersMsg : NetworkHeader
+    {
+        public List<string> DROPPEDPLAYERLIST;
+        public DisconnectedPlayersMsg()
+        {     
+            cmd = Commands.PLAYERDROPPED;
+            DROPPEDPLAYERLIST = new List<string>();
+        }
+    }
+}
 
 namespace NetworkObjects
 {
     [System.Serializable]
-    public class NetworkObject{
+    public class NetworkObject
+    {
         public string id;
     }
+
     [System.Serializable]
-    public class NetworkPlayer : NetworkObject{
-        public Color cubeColor;
-        public Vector3 cubPos;
-        public float HeartBeat;
-        public NetworkPlayer(){
-            cubeColor = new Color();
-            cubPos = new Vector3();
+    public class NetworkPlayer : NetworkObject
+    {
+        public Color color;
+        public Vector3 pos;
+        public bool isDropped;
+
+        public NetworkPlayer()
+        {
+            color = new Color();
+            pos = Vector3.zero;
+            isDropped = false;
         }
     }
 }

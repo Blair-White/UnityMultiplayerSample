@@ -1,25 +1,32 @@
 ﻿using UnityEngine;
 using UnityEngine.Assertions;
 using Unity.Collections;
+using System.Collections.Generic;
 using Unity.Networking.Transport;
 using NetworkMessages;
 using System;
-using System.Collections;
 using System.Text;
-using System.Collections.Generic;
-using System.Linq;
 
 public class NetworkServer : MonoBehaviour
 {
     public NetworkDriver m_Driver;
     public ushort serverPort;
+    
+    //List of connections to clients.
     private NativeList<NetworkConnection> m_Connections;
-    [SerializeField]
-    private Dictionary<string, NetworkObjects.NetworkPlayer> PlayersConnected;
-    private List<float> LastHandshakeTimes;
-    void Start ()
+
+ 
+    //Dictionary for heartbeat objects.
+    private Dictionary<string, float> heartbeat = new Dictionary<string, float>();
+    
+    
+    //Dictionary of connected players, Key 0,1,2, and the network object
+    private Dictionary<string, NetworkObjects.NetworkPlayer> PlayersConnected = new Dictionary<string, NetworkObjects.NetworkPlayer>(); //Dictionary for all clients
+   
+
+
+    void Start()
     {
-        PlayersConnected = new Dictionary<string, NetworkObjects.NetworkPlayer>();
 
         m_Driver = NetworkDriver.Create();
         var endpoint = NetworkEndPoint.AnyIpv4;
@@ -28,26 +35,173 @@ public class NetworkServer : MonoBehaviour
             Debug.Log("Failed to bind to port " + serverPort);
         else
             m_Driver.Listen();
-
         m_Connections = new NativeList<NetworkConnection>(16, Allocator.Persistent);
-        InvokeRepeating("SendClientUpdatesAll", 0.05f, 0.2f);
-        
-    }
 
-    void SendClientUpdatesAll()
+        //Easier than Ienumerator. From Assignment 1.
+        //Send updates to clients
+        InvokeRepeating("UpdateAllClients", 0.1f, 0.1f);
+    }
+    void UpdateAllClients()
     {
-        for (int i = 0; i < PlayersConnected.Count; i++)
+        //Create a new updatemesage object
+        ServerUpdateMsg m = new ServerUpdateMsg();
+        //loop through the dictionary and add connected players to the message
+        foreach (KeyValuePair<string, NetworkObjects.NetworkPlayer> client in PlayersConnected)
         {
-            //example to send a handshake
-            HandshakeMsg m = new HandshakeMsg();
-            m.player.id = m_Connections[i].InternalId.ToString();
+            m.players.Add(client.Value);
+        }
+
+        //Now loop through connections and Send the message. Always assert of ull end up 
+        //crashing the server, found out the hard way. 
+        for (int i = 0; i < m_Connections.Length; i++)
+        {
             Assert.IsTrue(m_Connections[i].IsCreated);
             SendToClient(JsonUtility.ToJson(m), m_Connections[i]);
         }
     }
-    void SendToClient(string message, NetworkConnection c){
+  
+
+    void OnConnect(NetworkConnection c)
+    {
+        
+        Debug.Log("Accepted a connection");
+        //Create a new message when we connect to get our ID
+        PlayerUpdateMsg MyIdMsg = new PlayerUpdateMsg();
+        //Send the Get id command to this client C
+        MyIdMsg.cmd = Commands.GETMYID;
+        MyIdMsg.player.id = c.InternalId.ToString();
+
+        Assert.IsTrue(c.IsCreated);
+        
+        SendToClient(JsonUtility.ToJson(MyIdMsg), c);
+
+        //Create a message of the existing players.
+        ServerUpdateMsg ExistingPlayersMessage = new ServerUpdateMsg();
+        ExistingPlayersMessage.cmd = Commands.GETEXISITNGPLAYERS;
+        
+        //loop throught the existing players and add them to the message
+        foreach (KeyValuePair<string, NetworkObjects.NetworkPlayer> item in PlayersConnected)
+        {
+            ExistingPlayersMessage.players.Add(item.Value);
+        }
+
+        Assert.IsTrue(c.IsCreated);
+        SendToClient(JsonUtility.ToJson(ExistingPlayersMessage), c);
+
+
+        
+        //Now create a message to tell the Existing players of the new player arrival.
+        PlayerUpdateMsg NEWPLAYER_Message = new PlayerUpdateMsg();
+        NEWPLAYER_Message.cmd = Commands.ADDPLAYER;
+        NEWPLAYER_Message.player.id = c.InternalId.ToString();
+        
+        //loop through our connections and send the message
+        for (int i = 0; i < m_Connections.Length; i++)
+        {
+            Assert.IsTrue(m_Connections[i].IsCreated);
+            SendToClient(JsonUtility.ToJson(NEWPLAYER_Message), m_Connections[i]);
+        }
+
+        //Add the connection to the server connection list
+        //
+        m_Connections.Add(c);
+
+        //Create a new network object for our new player and store it in our existing players list.
+        PlayersConnected[c.InternalId.ToString()] = new NetworkObjects.NetworkPlayer();
+    }
+
+    void OnData(DataStreamReader stream, int i, NetworkConnection client)
+    {
+    
+        NativeArray<byte> bytes = new NativeArray<byte>(stream.Length, Allocator.Temp);
+        stream.ReadBytes(bytes);
+        string recMsg = Encoding.ASCII.GetString(bytes.ToArray());
+        NetworkHeader header = JsonUtility.FromJson<NetworkHeader>(recMsg);
+
+        switch (header.cmd)
+        {
+            case Commands.HANDSHAKE:
+                HandshakeMsg hsMsg = JsonUtility.FromJson<HandshakeMsg>(recMsg);
+                Debug.Log("Handshake message received!");
+                break;
+            case Commands.PLAYER_UPDATE:
+                PlayerUpdateMsg updateMessage = JsonUtility.FromJson<PlayerUpdateMsg>(recMsg);
+                if (PlayersConnected.ContainsKey(updateMessage.player.id))
+                {
+                    PlayersConnected[updateMessage.player.id].id = updateMessage.player.id;
+                    PlayersConnected[updateMessage.player.id].pos = updateMessage.player.pos;
+                    PlayersConnected[updateMessage.player.id].isDropped = updateMessage.player.isDropped;
+                }
+                break;
+            case Commands.SERVER_UPDATE:
+                ServerUpdateMsg ServerUpdateMessage = JsonUtility.FromJson<ServerUpdateMsg>(recMsg);
+                Debug.Log("Server Update.");
+                break;
+            default:
+                Debug.Log("SERVER ERROR: Unrecognized message received!");
+                break;
+        }
+    }
+
+
+    void checkForUpdate()
+    {
+        //Check for heartbeat time, if its > 10 seconds delete the client:
+        
+        //Create a new list for the deleted clients
+        List<string> DroppedClientList = new List<string>();
+        
+        //loop through our heartbeat objects and compare the time in heartbeat
+        //with the current time, if its > 10 seconds:
+        foreach (KeyValuePair<string, float> item in heartbeat)
+        {
+            
+            if (Time.time - item.Value >= 10f)
+            {
+                //Add the client to the list for deletion
+                DroppedClientList.Add(item.Key); 
+            }
+        }
+
+        //If we have clients to be deleted:
+        if (DroppedClientList.Count != 0)
+        {
+            //Remove the client from both our connected players and heartbeat
+            //If you do not do this you will crash the server...
+            for (int i = 0; i < DroppedClientList.Count; ++i)
+            {
+                PlayersConnected.Remove(DroppedClientList[i]);
+                heartbeat.Remove(DroppedClientList[i]);
+            }
+
+
+            DisconnectedPlayersMsg DCMSG = new DisconnectedPlayersMsg();
+            DCMSG.DROPPEDPLAYERLIST = DroppedClientList;
+
+            // Send message to all clients
+            for (int i = 0; i < m_Connections.Length; i++)
+            {
+                if (DroppedClientList.Contains(m_Connections[i].InternalId.ToString()) == true)
+                {
+                    continue;
+                }
+                Assert.IsTrue(m_Connections[i].IsCreated);
+                SendToClient(JsonUtility.ToJson(DCMSG), m_Connections[i]);
+            }
+        }
+    }
+
+    void OnDisconnect(int i)
+    {
+        Debug.Log("Client " + m_Connections[i].InternalId.ToString() + " disconnected from server");
+        m_Connections[i] = default(NetworkConnection);
+    }
+
+
+    void SendToClient(string message, NetworkConnection c)
+    {
         var writer = m_Driver.BeginSend(NetworkPipeline.Null, c);
-        NativeArray<byte> bytes = new NativeArray<byte>(Encoding.ASCII.GetBytes(message),Allocator.Temp);
+        NativeArray<byte> bytes = new NativeArray<byte>(Encoding.ASCII.GetBytes(message), Allocator.Temp);
         writer.WriteBytes(bytes);
         m_Driver.EndSend(writer);
     }
@@ -57,126 +211,37 @@ public class NetworkServer : MonoBehaviour
         m_Connections.Dispose();
     }
 
-    void OnConnect(NetworkConnection c){
-        //Things we gotta do:
-        // - Connect the new player - done for us already.
-        // A Send the player its id
-        // B Send the player a list of existing clients
-        // C Send all the clients the new player
-        // D Add the new player to the servers list of client connections
-        // D part 2 Also Add the player to the dictionary we keep. of player objects
-        // - /wrist.
-        m_Connections.Add(c);
-        Debug.Log("Accepted a connection");
-        //A
-        PlayerUpdateMsg SendIDMsg = new PlayerUpdateMsg();
-        SendIDMsg.cmd = Commands.SET_NEW_PLAYER_ID;
-        SendIDMsg.player.id = c.InternalId.ToString();
-        SendToClient(JsonUtility.ToJson(SendIDMsg), c);
-        //B
-        ServerUpdateMsg ExistingPlayers = new ServerUpdateMsg();
-        ExistingPlayers.cmd = Commands.SET_NEW_PLAYER_LIST;
-        for(int i = 0; i < PlayersConnected.Count; i++)
-        {   //Fuck my life. 
-            ExistingPlayers.players.Add(PlayersConnected.Values.ElementAt(i));
-        }
-        SendToClient(JsonUtility.ToJson(ExistingPlayers), c);
-        //C
-        PlayerUpdateMsg AddNewPlayerMsg = new PlayerUpdateMsg();
-        AddNewPlayerMsg.cmd = Commands.ADD_NEW_PLAYER;
-        //Make sure to give the ID because why the fuck is this so hard. 
-        AddNewPlayerMsg.player.id = SendIDMsg.player.id;
-        //Now the loop lord have mercy
-        for(int i = 0; i < m_Connections.Length; i++)
-        {
-            SendToClient(JsonUtility.ToJson(AddNewPlayerMsg), m_Connections[i]);
-        }
-
-        //Finally D
-        m_Connections.Add(c);
-        //D Part 2 We are adding a new network player to the key with this objects id
-        PlayersConnected[c.InternalId.ToString()] = new NetworkObjects.NetworkPlayer();
-
-        //Add a time slot for handshake check on server
-        //LastHandshakeTimes.Add(Time.time);
-    }
-
-
-
-
-    void OnData(DataStreamReader stream, int i){
-        NativeArray<byte> bytes = new NativeArray<byte>(stream.Length,Allocator.Temp);
-        stream.ReadBytes(bytes);
-        string recMsg = Encoding.ASCII.GetString(bytes.ToArray());
-        NetworkHeader header = JsonUtility.FromJson<NetworkHeader>(recMsg);
-
-        switch(header.cmd){
-            case Commands.HANDSHAKE:
-            HandshakeMsg hsMsg = JsonUtility.FromJson<HandshakeMsg>(recMsg);
-            Debug.Log("Handshake message received!");
-            break;
-            case Commands.PLAYER_UPDATE:
-            PlayerUpdateMsg puMsg = JsonUtility.FromJson<PlayerUpdateMsg>(recMsg);
-            Debug.Log("Player update message received!");
-            break;
-            case Commands.SERVER_UPDATE:
-            ServerUpdateMsg suMsg = JsonUtility.FromJson<ServerUpdateMsg>(recMsg);
-            Debug.Log("Server update message received!");
-            break;
-            default:
-            Debug.Log("SERVER ERROR: Unrecognized message received!");
-            break;
-        }
-    }
-
-    //Can skip previous assignment Heartbeat disconnect as we automatically 
-    //lose connection here.
-    //Remove client from appropriate lists and notify clients of dropped player.
-    void OnDisconnect(int i){
-        Debug.Log("Client disconnected from server");
-        
-        m_Connections[i] = default(NetworkConnection);
-    }
-
-    void Update ()
+    void Update()
     {
         m_Driver.ScheduleUpdate().Complete();
-
-        // CleanUpConnections
         for (int i = 0; i < m_Connections.Length; i++)
         {
             if (!m_Connections[i].IsCreated)
             {
-
                 m_Connections.RemoveAtSwapBack(i);
                 --i;
             }
         }
-
-        // AcceptNewConnections
         NetworkConnection c = m_Driver.Accept();
-        while (c  != default(NetworkConnection))
-        {            
+        while (c != default(NetworkConnection))
+        {
             OnConnect(c);
-
-            // Check if there is another new connection
             c = m_Driver.Accept();
         }
 
-
-        // Read Incoming Messages
         DataStreamReader stream;
         for (int i = 0; i < m_Connections.Length; i++)
         {
             Assert.IsTrue(m_Connections[i].IsCreated);
-            
             NetworkEvent.Type cmd;
             cmd = m_Driver.PopEventForConnection(m_Connections[i], out stream);
             while (cmd != NetworkEvent.Type.Empty)
             {
                 if (cmd == NetworkEvent.Type.Data)
                 {
-                    OnData(stream, i);
+                    OnData(stream, i, m_Connections[i]);
+
+                    heartbeat[m_Connections[i].InternalId.ToString()] = Time.time;
                 }
                 else if (cmd == NetworkEvent.Type.Disconnect)
                 {
@@ -186,5 +251,6 @@ public class NetworkServer : MonoBehaviour
                 cmd = m_Driver.PopEventForConnection(m_Connections[i], out stream);
             }
         }
+        checkForUpdate();
     }
 }
