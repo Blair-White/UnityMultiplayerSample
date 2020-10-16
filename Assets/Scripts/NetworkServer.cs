@@ -16,7 +16,7 @@ public class NetworkServer : MonoBehaviour
     private NativeList<NetworkConnection> m_Connections;
     [SerializeField]
     private Dictionary<string, NetworkObjects.NetworkPlayer> PlayersConnected;
-
+    private List<float> LastHandshakeTimes;
     void Start ()
     {
         PlayersConnected = new Dictionary<string, NetworkObjects.NetworkPlayer>();
@@ -45,6 +45,7 @@ public class NetworkServer : MonoBehaviour
                 ////example to send a handshake
                 HandshakeMsg m = new HandshakeMsg();
                 m.player.id = m_Connections[i].InternalId.ToString();
+                Assert.IsTrue(m_Connections[i].IsCreated);
                 SendToClient(JsonUtility.ToJson(m), m_Connections[i]);
             }
             yield return new WaitForSeconds(2);
@@ -102,6 +103,9 @@ public class NetworkServer : MonoBehaviour
         m_Connections.Add(c);
         //D Part 2 We are adding a new network player to the key with this objects id
         PlayersConnected[c.InternalId.ToString()] = new NetworkObjects.NetworkPlayer();
+
+        //Add a time slot for handshake check on server
+        //LastHandshakeTimes.Add(Time.time);
     }
 
 
@@ -138,23 +142,7 @@ public class NetworkServer : MonoBehaviour
     void OnDisconnect(int i){
         Debug.Log("Client disconnected from server");
         
-        for(int j = 0; j < PlayersConnected.Count; j++)
-        {
-            if(PlayersConnected.ElementAt(j).Value.id == m_Connections[j].InternalId.ToString())
-            {
-                PlayerUpdateMsg DisconnectedPlayer = new PlayerUpdateMsg();
-                DisconnectedPlayer.cmd = Commands.REMOVE_PLAYER;
-                DisconnectedPlayer.player.id = PlayersConnected.ElementAt(j).Value.id;
-                PlayersConnected.Remove(j.ToString());
-                for (int k = 0; k < m_Connections.Length; k++)
-                {
-                    SendToClient(JsonUtility.ToJson(DisconnectedPlayer), m_Connections[j]);
-                }
-            }
-        }
-
         m_Connections[i] = default(NetworkConnection);
-        
     }
 
     void Update ()

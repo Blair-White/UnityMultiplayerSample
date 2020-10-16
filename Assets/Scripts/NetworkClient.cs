@@ -16,8 +16,10 @@ public class NetworkClient : MonoBehaviour
     public string serverIP;
     public ushort serverPort;
     public string myID;
-
-    public Dictionary<string, NetworkObject> ConnectedClients;
+    //since we can't serialize dictionaries easy and clients are in order 0,1,2,3 im just going to use arrays.
+    public List<string> ClientIDs;
+    public List<GameObject> ClientObjects;
+    public List<Vector3> ClientPositions;
     
     void Start ()
     {
@@ -80,10 +82,6 @@ public class NetworkClient : MonoBehaviour
                 break;
             case Commands.SET_NEW_PLAYER_LIST:
                 ServerUpdateMsg newListMsg = JsonUtility.FromJson<ServerUpdateMsg>(recMsg);
-                for(int i = 0; i < newListMsg.players.Count; i++)
-                {
-                    ConnectedClients.Add(newListMsg.players.ElementAt(i).id, newListMsg.players.ElementAt(i));
-                }
                 Debug.Log("NEW PLAYER LIST RECEIVED");
                 break;
             case Commands.REMOVE_PLAYER:

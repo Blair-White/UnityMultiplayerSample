@@ -35,6 +35,7 @@ namespace NetworkMessages
         public PlayerUpdateMsg(){      // Constructor
             cmd = Commands.PLAYER_UPDATE;
             player = new NetworkObjects.NetworkPlayer();
+            player.HeartBeat = Time.time;
         }
     };
 
@@ -65,9 +66,10 @@ namespace NetworkObjects
     public class NetworkPlayer : NetworkObject{
         public Color cubeColor;
         public Vector3 cubPos;
-
+        public float HeartBeat;
         public NetworkPlayer(){
             cubeColor = new Color();
+            cubPos = new Vector3();
         }
     }
 }
