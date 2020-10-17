@@ -15,6 +15,30 @@ namespace NetworkMessages
         PLAYERDROPPED
     }
 
+
+    [System.Serializable]
+    public class DisconnectedPlayersMsg : NetworkHeader
+    {
+        public List<string> DROPPEDPLAYERLIST;
+        public DisconnectedPlayersMsg()
+        {
+            cmd = Commands.PLAYERDROPPED;
+            DROPPEDPLAYERLIST = new List<string>();
+        }
+    }
+
+    [System.Serializable]
+    public class ServerUpdateMsg : NetworkHeader
+    {
+        public List<NetworkObjects.NetworkPlayer> players;
+        public ServerUpdateMsg()
+        {
+            cmd = Commands.SERVER_UPDATE;
+            players = new List<NetworkObjects.NetworkPlayer>();
+        }
+    }
+
+
     [System.Serializable]
     public class NetworkHeader
     {
@@ -46,27 +70,7 @@ namespace NetworkMessages
         }
     };
 
-    [System.Serializable]
-    public class ServerUpdateMsg : NetworkHeader
-    {
-        public List<NetworkObjects.NetworkPlayer> players;
-        public ServerUpdateMsg()
-        {      
-            cmd = Commands.SERVER_UPDATE;
-            players = new List<NetworkObjects.NetworkPlayer>();
-        }
-    }
 
-    [System.Serializable]
-    public class DisconnectedPlayersMsg : NetworkHeader
-    {
-        public List<string> DROPPEDPLAYERLIST;
-        public DisconnectedPlayersMsg()
-        {     
-            cmd = Commands.PLAYERDROPPED;
-            DROPPEDPLAYERLIST = new List<string>();
-        }
-    }
 }
 
 namespace NetworkObjects

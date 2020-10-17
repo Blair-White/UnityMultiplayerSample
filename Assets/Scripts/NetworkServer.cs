@@ -23,8 +23,6 @@ public class NetworkServer : MonoBehaviour
     //Dictionary of connected players, Key 0,1,2, and the network object
     private Dictionary<string, NetworkObjects.NetworkPlayer> PlayersConnected = new Dictionary<string, NetworkObjects.NetworkPlayer>(); //Dictionary for all clients
    
-
-
     void Start()
     {
 
@@ -59,7 +57,6 @@ public class NetworkServer : MonoBehaviour
             SendToClient(JsonUtility.ToJson(m), m_Connections[i]);
         }
     }
-  
 
     void OnConnect(NetworkConnection c)
     {
@@ -110,6 +107,7 @@ public class NetworkServer : MonoBehaviour
         PlayersConnected[c.InternalId.ToString()] = new NetworkObjects.NetworkPlayer();
     }
 
+
     void OnData(DataStreamReader stream, int i, NetworkConnection client)
     {
     
@@ -126,8 +124,10 @@ public class NetworkServer : MonoBehaviour
                 break;
             case Commands.PLAYER_UPDATE:
                 PlayerUpdateMsg updateMessage = JsonUtility.FromJson<PlayerUpdateMsg>(recMsg);
+                //If the players connected match the key in the update from server
                 if (PlayersConnected.ContainsKey(updateMessage.player.id))
                 {
+                    //modify its values on the server to match the update message.
                     PlayersConnected[updateMessage.player.id].id = updateMessage.player.id;
                     PlayersConnected[updateMessage.player.id].pos = updateMessage.player.pos;
                     PlayersConnected[updateMessage.player.id].isDropped = updateMessage.player.isDropped;
@@ -138,62 +138,14 @@ public class NetworkServer : MonoBehaviour
                 Debug.Log("Server Update.");
                 break;
             default:
-                Debug.Log("SERVER ERROR: Unrecognized message received!");
+                Debug.Log("ServerError (Default Log)");
                 break;
-        }
-    }
-
-
-    void checkForUpdate()
-    {
-        //Check for heartbeat time, if its > 10 seconds delete the client:
-        
-        //Create a new list for the deleted clients
-        List<string> DroppedClientList = new List<string>();
-        
-        //loop through our heartbeat objects and compare the time in heartbeat
-        //with the current time, if its > 10 seconds:
-        foreach (KeyValuePair<string, float> item in heartbeat)
-        {
-            
-            if (Time.time - item.Value >= 10f)
-            {
-                //Add the client to the list for deletion
-                DroppedClientList.Add(item.Key); 
-            }
-        }
-
-        //If we have clients to be deleted:
-        if (DroppedClientList.Count != 0)
-        {
-            //Remove the client from both our connected players and heartbeat
-            //If you do not do this you will crash the server...
-            for (int i = 0; i < DroppedClientList.Count; ++i)
-            {
-                PlayersConnected.Remove(DroppedClientList[i]);
-                heartbeat.Remove(DroppedClientList[i]);
-            }
-
-
-            DisconnectedPlayersMsg DCMSG = new DisconnectedPlayersMsg();
-            DCMSG.DROPPEDPLAYERLIST = DroppedClientList;
-
-            // Send message to all clients
-            for (int i = 0; i < m_Connections.Length; i++)
-            {
-                if (DroppedClientList.Contains(m_Connections[i].InternalId.ToString()) == true)
-                {
-                    continue;
-                }
-                Assert.IsTrue(m_Connections[i].IsCreated);
-                SendToClient(JsonUtility.ToJson(DCMSG), m_Connections[i]);
-            }
         }
     }
 
     void OnDisconnect(int i)
     {
-        Debug.Log("Client " + m_Connections[i].InternalId.ToString() + " disconnected from server");
+        Debug.Log("Client disconnected from server");
         m_Connections[i] = default(NetworkConnection);
     }
 
@@ -251,6 +203,53 @@ public class NetworkServer : MonoBehaviour
                 cmd = m_Driver.PopEventForConnection(m_Connections[i], out stream);
             }
         }
-        checkForUpdate();
+        AssertHeartbeatTime();
+    }
+
+    void AssertHeartbeatTime()
+    {
+        //Check for heartbeat time, if its > 10 seconds delete the client:
+
+        //Create a new list for the deleted clients
+        List<string> DroppedClientList = new List<string>();
+
+        //loop through our heartbeat objects and compare the time in heartbeat
+        //with the current time, if its > 10 seconds:
+        foreach (KeyValuePair<string, float> item in heartbeat)
+        {
+
+            if (Time.time - item.Value >= 10f)
+            {
+                //Add the client to the list for deletion
+                DroppedClientList.Add(item.Key);
+            }
+        }
+
+        //If we have clients to be deleted:
+        if (DroppedClientList.Count != 0)
+        {
+            //Remove the client from both our connected players and heartbeat
+            //If you do not do this you will crash the server...
+            for (int i = 0; i < DroppedClientList.Count; ++i)
+            {
+                PlayersConnected.Remove(DroppedClientList[i]);
+                heartbeat.Remove(DroppedClientList[i]);
+            }
+
+
+            DisconnectedPlayersMsg DCMSG = new DisconnectedPlayersMsg();
+            DCMSG.DROPPEDPLAYERLIST = DroppedClientList;
+
+            // Send message to all clients
+            for (int i = 0; i < m_Connections.Length; i++)
+            {
+                if (DroppedClientList.Contains(m_Connections[i].InternalId.ToString()) == true)
+                {
+                    continue;
+                }
+                Assert.IsTrue(m_Connections[i].IsCreated);
+                SendToClient(JsonUtility.ToJson(DCMSG), m_Connections[i]);
+            }
+        }
     }
 }
